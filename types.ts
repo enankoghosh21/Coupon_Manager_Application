@@ -4,11 +4,17 @@ export enum CouponStatus {
   USED = 'Used',
 }
 
+export enum ApprovalStatus {
+  PENDING = 'Pending',
+  APPROVED = 'Approved',
+  DENIED = 'Denied',
+}
+
 export interface GenerationRecord {
   caseId: string;
   userId: string;
   agentName: string;
-  orderNumber?: string;
+  orderNumber: string;
   reason: string;
   generatedAt: Date;
 }
@@ -25,6 +31,25 @@ export interface Coupon {
   beginsAt: Date;
   expiresAt?: Date;
 }
+
+export interface ApprovalRequest {
+  id: string;
+  status: ApprovalStatus;
+  requestedAt: Date;
+  // Details from the generation form
+  caseId: string;
+  userId: string;
+  agentName: string;
+  orderNumber: string;
+  reason: string;
+  // The coupon type requested
+  couponType: string;
+  promoName: string;
+  // Details for resolution
+  resolvedBy?: string; // Admin name
+  resolvedAt?: Date;
+}
+
 
 export interface SkippedCoupon {
   rowData: Record<string, string | number>;

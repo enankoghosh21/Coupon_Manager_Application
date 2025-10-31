@@ -3,11 +3,13 @@ import { Uploader } from './components/Uploader';
 import { Generator } from './components/Generator';
 import { CouponTable } from './components/CouponTable';
 import { Dashboard } from './components/Dashboard';
-import { Coupon, CouponStatus, GenerationRecord, SkippedCoupon } from './types';
+import { Approvals } from './components/Approvals';
+import { Coupon, CouponStatus, GenerationRecord, SkippedCoupon, ApprovalRequest, ApprovalStatus } from './types';
 import { LogoIcon } from './components/icons/LogoIcon';
+import { ApprovalIcon } from './components/icons/ApprovalIcon';
 import { generateMockCoupons } from './utils/mockData';
 
-type Tab = 'dashboard' | 'generator' | 'manage' | 'history';
+type Tab = 'dashboard' | 'generator' | 'approvals' | 'manage' | 'history';
 type Role = 'agent' | 'admin';
 
 // Add type declarations for window objects from CDNs
@@ -32,13 +34,21 @@ const rehydrateCoupons = (coupons: any[]): Coupon[] => {
     }));
 };
 
+const rehydrateApprovalRequests = (requests: any[]): ApprovalRequest[] => {
+    return requests.map(req => ({
+        ...req,
+        requestedAt: new Date(req.requestedAt),
+        resolvedAt: req.resolvedAt ? new Date(req.resolvedAt) : undefined
+    }));
+};
+
 
 const TabButton: React.FC<{tabId: Tab, activeTab: Tab, setActiveTab: (tab: Tab) => void, children: React.ReactNode}> = ({tabId, activeTab, setActiveTab, children}) => {
     const isActive = activeTab === tabId;
     return (
         <button
             onClick={() => setActiveTab(tabId)}
-            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 flex items-center ${
                 isActive 
                 ? 'bg-indigo-600 text-white shadow-sm' 
                 : 'text-slate-600 hover:bg-slate-200'
@@ -50,34 +60,40 @@ const TabButton: React.FC<{tabId: Tab, activeTab: Tab, setActiveTab: (tab: Tab) 
 }
 
 const App: React.FC = () => {
-  const [coupons, setCoupons] = useState<Coupon[]>(() => {
-    try {
-        const storedData = localStorage.getItem(STORAGE_KEY);
-        if (storedData) {
-            return rehydrateCoupons(JSON.parse(storedData));
-        }
-    } catch (error) {
-        console.error("Failed to initialize coupons from localStorage", error);
-    }
-    return []; // Start with an empty array if no data is in storage
-  });
-
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('generator');
   const [uploadReport, setUploadReport] = useState<{ newCount: number; skipped: SkippedCoupon[] } | null>(null);
   const [role, setRole] = useState<Role>('agent');
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
+  // Load data from localStorage on initial render
   useEffect(() => {
     try {
-      if (coupons.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
-      } else {
-        localStorage.removeItem(STORAGE_KEY); // Clean up storage if all coupons are cleared
-      }
+        const storedData = localStorage.getItem(STORAGE_KEY);
+        if (storedData) {
+            const data = JSON.parse(storedData);
+            setCoupons(rehydrateCoupons(data.coupons || []));
+            setApprovalRequests(rehydrateApprovalRequests(data.approvalRequests || []));
+        }
     } catch (error) {
-      console.error("Failed to save coupons to localStorage", error);
+        console.error("Failed to load data from localStorage", error);
     }
-  }, [coupons]);
+  }, []);
+
+  // Save data to localStorage whenever it changes
+  useEffect(() => {
+    try {
+        const dataToStore = { coupons, approvalRequests };
+        if (coupons.length > 0 || approvalRequests.length > 0) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToStore));
+        } else {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+    } catch (error) {
+      console.error("Failed to save data to localStorage", error);
+    }
+  }, [coupons, approvalRequests]);
 
 
   useEffect(() => {
@@ -91,25 +107,35 @@ const App: React.FC = () => {
     setUploadReport({ newCount: newCoupons.length, skipped: skippedCoupons });
   };
 
-  const handleGenerate = (details: Omit<GenerationRecord, 'generatedAt'>, type: string, promoName: string): Coupon | null => {
+  const handleGenerate = (details: Omit<GenerationRecord, 'generatedAt'>, type: string, promoName: string): Coupon | 'APPROVAL_REQUESTED' | null => {
+    const { caseId, userId, orderNumber } = details;
+
     const isCaseIdUsed = coupons.some(c => 
         c.status === CouponStatus.USED && 
-        c.generationRecord?.caseId.trim().toLowerCase() === details.caseId.trim().toLowerCase()
+        c.generationRecord?.caseId.trim().toLowerCase() === caseId.trim().toLowerCase()
     );
 
     if (isCaseIdUsed) {
-        throw new Error(`A coupon has already been generated for Case ID "${details.caseId}". Only one coupon per case is allowed.`);
+        throw new Error(`A coupon has already been generated for Case ID "${caseId}". Only one coupon per case is allowed.`);
     }
+    
+    const isUserOrderPairUsed = coupons.some(c =>
+        c.status === CouponStatus.USED &&
+        c.generationRecord?.userId.trim().toLowerCase() === userId.trim().toLowerCase() &&
+        c.generationRecord?.orderNumber.trim().toLowerCase() === orderNumber.trim().toLowerCase()
+    );
 
-    if (details.orderNumber && details.orderNumber.trim() !== '') {
-      const isOrderNumberUsed = coupons.some(c =>
-          c.status === CouponStatus.USED &&
-          c.generationRecord?.orderNumber?.trim().toLowerCase() === details.orderNumber.trim().toLowerCase()
-      );
-
-      if (isOrderNumberUsed) {
-          throw new Error(`A coupon has already been generated for Order Number "${details.orderNumber}".`);
-      }
+    if (isUserOrderPairUsed) {
+        const newRequest: ApprovalRequest = {
+            id: `${Date.now()}-${userId}`,
+            status: ApprovalStatus.PENDING,
+            requestedAt: new Date(),
+            ...details,
+            couponType: type,
+            promoName: promoName,
+        };
+        setApprovalRequests(prev => [newRequest, ...prev]);
+        return 'APPROVAL_REQUESTED';
     }
       
     const now = new Date();
@@ -145,7 +171,120 @@ const App: React.FC = () => {
     return generatedCoupon;
   };
   
-  const { stats, availableCoupons, usedCoupons } = useMemo(() => {
+  const handleApprovalAction = (requestId: string, action: 'approve' | 'deny'): Coupon | null => {
+    const requestIndex = approvalRequests.findIndex(r => r.id === requestId);
+    if (requestIndex === -1) return null;
+
+    let updatedRequests = [...approvalRequests];
+    const request = updatedRequests[requestIndex];
+
+    if (action === 'approve') {
+        const now = new Date();
+        const availableCouponIndex = coupons.findIndex(c => 
+            c.status === CouponStatus.AVAILABLE &&
+            c.beginsAt <= now &&
+            (!c.expiresAt || c.expiresAt >= now) &&
+            c.type === request.couponType &&
+            c.promoName === request.promoName
+        );
+
+        if (availableCouponIndex !== -1) {
+            const updatedCoupons = [...coupons];
+            const couponToUpdate = updatedCoupons[availableCouponIndex];
+
+            const generationRecord: GenerationRecord = {
+                caseId: request.caseId,
+                userId: request.userId,
+                agentName: request.agentName,
+                orderNumber: request.orderNumber,
+                reason: request.reason,
+                generatedAt: new Date(),
+            };
+
+            const generatedCoupon: Coupon = {
+                ...couponToUpdate,
+                status: CouponStatus.USED,
+                generationRecord,
+            };
+
+            updatedCoupons[availableCouponIndex] = generatedCoupon;
+            setCoupons(updatedCoupons);
+            
+            updatedRequests[requestIndex] = { ...request, status: ApprovalStatus.APPROVED, resolvedAt: new Date(), resolvedBy: 'Admin' };
+            setApprovalRequests(updatedRequests);
+            return generatedCoupon;
+        } else {
+            alert('No available coupons matching the request. The request will be denied.');
+            updatedRequests[requestIndex] = { ...request, status: ApprovalStatus.DENIED, resolvedAt: new Date(), resolvedBy: 'Admin' };
+            setApprovalRequests(updatedRequests);
+            return null;
+        }
+    } else { // Deny
+        updatedRequests[requestIndex] = { ...request, status: ApprovalStatus.DENIED, resolvedAt: new Date(), resolvedBy: 'Admin' };
+        setApprovalRequests(updatedRequests);
+        return null;
+    }
+  };
+
+  const handleBulkAction = (requestIds: string[], action: 'approve' | 'deny'): { approvedCoupons: Coupon[], failedRequestIds: string[] } => {
+    let updatedCoupons = [...coupons];
+    let updatedRequests = [...approvalRequests];
+    const approvedCouponsResult: Coupon[] = [];
+    const failedRequestIdsResult: string[] = [];
+    const now = new Date();
+
+    requestIds.forEach(requestId => {
+        const requestIndex = updatedRequests.findIndex(r => r.id === requestId);
+        if (requestIndex === -1 || updatedRequests[requestIndex].status !== ApprovalStatus.PENDING) {
+            return; 
+        }
+
+        const request = updatedRequests[requestIndex];
+
+        if (action === 'approve') {
+            const availableCouponIndex = updatedCoupons.findIndex(c => 
+                c.status === CouponStatus.AVAILABLE &&
+                c.beginsAt <= now &&
+                (!c.expiresAt || c.expiresAt >= now) &&
+                c.type === request.couponType &&
+                c.promoName === request.promoName
+            );
+
+            if (availableCouponIndex !== -1) {
+                const couponToUpdate = updatedCoupons[availableCouponIndex];
+                const generationRecord: GenerationRecord = {
+                    caseId: request.caseId,
+                    userId: request.userId,
+                    agentName: request.agentName,
+                    orderNumber: request.orderNumber,
+                    reason: request.reason,
+                    generatedAt: now,
+                };
+                const generatedCoupon: Coupon = {
+                    ...couponToUpdate,
+                    status: CouponStatus.USED,
+                    generationRecord,
+                };
+                
+                updatedCoupons[availableCouponIndex] = generatedCoupon;
+                updatedRequests[requestIndex] = { ...request, status: ApprovalStatus.APPROVED, resolvedAt: now, resolvedBy: 'Admin (Bulk)' };
+                approvedCouponsResult.push(generatedCoupon);
+            } else {
+                updatedRequests[requestIndex] = { ...request, status: ApprovalStatus.DENIED, resolvedAt: now, resolvedBy: 'Admin (Bulk)', reason: 'No available coupon.' };
+                failedRequestIdsResult.push(requestId);
+            }
+        } else { // Deny
+            updatedRequests[requestIndex] = { ...request, status: ApprovalStatus.DENIED, resolvedAt: now, resolvedBy: 'Admin (Bulk)' };
+        }
+    });
+
+    setCoupons(updatedCoupons);
+    setApprovalRequests(updatedRequests);
+
+    return { approvedCoupons: approvedCouponsResult, failedRequestIds: failedRequestIdsResult };
+  };
+  
+  const { stats, availableCoupons, usedCoupons, pendingApprovalsCount } = useMemo(() => {
       const now = new Date();
       const used = coupons.filter(c => c.status === CouponStatus.USED)
           .sort((a,b) => b.generationRecord!.generatedAt.getTime() - a.generationRecord!.generatedAt.getTime());
@@ -159,13 +298,15 @@ const App: React.FC = () => {
       const usedCount = used.length;
       const totalCount = coupons.length;
       const availableCount = available.length;
+      const pendingCount = approvalRequests.filter(r => r.status === ApprovalStatus.PENDING).length;
 
       return {
         stats: { available: availableCount, used: usedCount, total: totalCount },
         availableCoupons: available,
-        usedCoupons: used
+        usedCoupons: used,
+        pendingApprovalsCount: pendingCount
       };
-  }, [coupons]);
+  }, [coupons, approvalRequests]);
   
   const handleExportUsageHistory = () => {
     try {
@@ -195,7 +336,8 @@ const App: React.FC = () => {
 
   const handleSaveData = () => {
     try {
-        const dataStr = JSON.stringify(coupons, null, 2);
+        const dataToSave = { coupons, approvalRequests };
+        const dataStr = JSON.stringify(dataToSave, null, 2);
         const blob = new Blob([dataStr], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -219,11 +361,8 @@ const App: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!window.confirm("Are you sure you want to load this data? This will overwrite all current coupons in the application.")) {
-        // Reset file input value to allow re-selection of the same file
-        if (fileInputRef.current) {
-            fileInputRef.current.value = "";
-        }
+    if (!window.confirm("Are you sure you want to load this data? This will overwrite all current coupons and approval requests in the application.")) {
+        if (fileInputRef.current) fileInputRef.current.value = "";
         return;
     }
 
@@ -231,30 +370,26 @@ const App: React.FC = () => {
     reader.onload = (e) => {
         try {
             const text = e.target?.result as string;
-            const parsedData = JSON.parse(text);
-            if (Array.isArray(parsedData)) {
-                const rehydrated = rehydrateCoupons(parsedData);
-                setCoupons(rehydrated);
-                setUploadReport({ newCount: rehydrated.length, skipped: [] });
-            } else {
-                throw new Error("Invalid data format.");
-            }
+            const data = JSON.parse(text);
+            const rehydratedCoupons = rehydrateCoupons(data.coupons || []);
+            const rehydratedRequests = rehydrateApprovalRequests(data.approvalRequests || []);
+            setCoupons(rehydratedCoupons);
+            setApprovalRequests(rehydratedRequests);
+            setUploadReport({ newCount: rehydratedCoupons.length, skipped: [] });
         } catch (error) {
             console.error("Failed to load data:", error);
             alert("Failed to load or parse the data file. Please ensure it's a valid JSON backup from this application.");
         } finally {
-            // Reset file input value to allow re-selection of the same file
-            if (fileInputRef.current) {
-                fileInputRef.current.value = "";
-            }
+            if (fileInputRef.current) fileInputRef.current.value = "";
         }
     };
     reader.readAsText(file);
   };
 
   const handleClearData = () => {
-    if (window.confirm("Are you sure? This will permanently delete all coupon data from the application.")) {
+    if (window.confirm("Are you sure? This will permanently delete all application data.")) {
         setCoupons([]);
+        setApprovalRequests([]);
     }
   };
 
@@ -262,6 +397,7 @@ const App: React.FC = () => {
     if (window.confirm("Are you sure? This will replace any current data with the sample dataset for testing.")) {
         const mockData = generateMockCoupons(500);
         setCoupons(mockData);
+        setApprovalRequests([]);
         alert("Sample data loaded successfully.");
     }
   };
@@ -280,11 +416,18 @@ const App: React.FC = () => {
                         </h1>
                     </div>
                     <div className="hidden sm:block border-l border-slate-200 pl-4">
-                        <div className="flex items-baseline space-x-1">
+                        <div className="flex items-center space-x-1">
                             {role === 'admin' ? (
                                 <>
                                     <TabButton tabId="dashboard" activeTab={activeTab} setActiveTab={setActiveTab}>Dashboard</TabButton>
                                     <TabButton tabId="generator" activeTab={activeTab} setActiveTab={setActiveTab}>Generate</TabButton>
+                                    <TabButton tabId="approvals" activeTab={activeTab} setActiveTab={setActiveTab}>
+                                      <ApprovalIcon className="w-4 h-4 mr-2" />
+                                      Approvals
+                                      {pendingApprovalsCount > 0 && (
+                                        <span className="ml-2 inline-flex items-center justify-center h-5 w-5 text-xs font-bold text-red-100 bg-red-600 rounded-full">{pendingApprovalsCount}</span>
+                                      )}
+                                    </TabButton>
                                     <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage</TabButton>
                                     <TabButton tabId="history" activeTab={activeTab} setActiveTab={setActiveTab}>History</TabButton>
                                 </>
@@ -335,6 +478,10 @@ const App: React.FC = () => {
                         <>
                             <TabButton tabId="dashboard" activeTab={activeTab} setActiveTab={setActiveTab}>Dashboard</TabButton>
                             <TabButton tabId="generator" activeTab={activeTab} setActiveTab={setActiveTab}>Generate</TabButton>
+                             <TabButton tabId="approvals" activeTab={activeTab} setActiveTab={setActiveTab}>
+                              Approvals
+                              {pendingApprovalsCount > 0 && <span className="ml-1.5 inline-block w-2 h-2 bg-red-500 rounded-full"></span>}
+                            </TabButton>
                             <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage</TabButton>
                             <TabButton tabId="history" activeTab={activeTab} setActiveTab={setActiveTab}>History</TabButton>
                         </>
@@ -394,7 +541,15 @@ const App: React.FC = () => {
           {activeTab === 'dashboard' && role === 'admin' && <Dashboard coupons={coupons} />}
           
           {activeTab === 'generator' && (
-            <Generator onGenerate={handleGenerate} availableCoupons={availableCoupons} />
+            <Generator onGenerate={handleGenerate} availableCoupons={availableCoupons} usedCoupons={usedCoupons} />
+          )}
+
+          {activeTab === 'approvals' && role === 'admin' && (
+            <Approvals 
+              approvalRequests={approvalRequests} 
+              onAction={handleApprovalAction} 
+              onBulkAction={handleBulkAction} 
+            />
           )}
 
           {activeTab === 'manage' && role === 'admin' && (
