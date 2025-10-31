@@ -4,6 +4,7 @@ import { Generator } from './components/Generator';
 import { CouponTable } from './components/CouponTable';
 import { Dashboard } from './components/Dashboard';
 import { Coupon, CouponStatus, GenerationRecord, SkippedCoupon } from './types';
+import { LogoIcon } from './components/icons/LogoIcon';
 
 type Tab = 'dashboard' | 'generator' | 'manage' | 'history';
 type Role = 'agent' | 'admin';
@@ -36,10 +37,10 @@ const TabButton: React.FC<{tabId: Tab, activeTab: Tab, setActiveTab: (tab: Tab) 
     return (
         <button
             onClick={() => setActiveTab(tabId)}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
                 isActive 
                 ? 'bg-indigo-600 text-white shadow-sm' 
-                : 'text-gray-600 hover:bg-gray-200'
+                : 'text-slate-600 hover:bg-slate-200'
             }`}
         >
             {children}
@@ -171,7 +172,6 @@ const App: React.FC = () => {
             "Agent Name": coupon.generationRecord!.agentName,
             "Case ID": coupon.generationRecord!.caseId,
             "User ID": coupon.generationRecord!.userId,
-            "Customer Email": coupon.generationRecord!.customerEmail,
             "Order Number": coupon.generationRecord!.orderNumber || 'N/A',
             "Reason": coupon.generationRecord!.reason,
             "Promo Id": coupon.promoId,
@@ -249,89 +249,119 @@ const App: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-800 font-sans">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-900">
-                <span className="text-indigo-600">Coupon</span> Manager
-            </h1>
+    <div className="min-h-screen bg-slate-50 text-slate-800">
+      <header className="bg-white shadow-sm sticky top-0 z-20 border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+                <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                        <LogoIcon className="w-8 h-8 text-indigo-600" />
+                        <h1 className="text-xl font-bold text-slate-800">
+                            Coupon Manager
+                        </h1>
+                    </div>
+                    <div className="hidden sm:block border-l border-slate-200 pl-4">
+                        <div className="flex items-baseline space-x-1">
+                            {role === 'admin' ? (
+                                <>
+                                    <TabButton tabId="dashboard" activeTab={activeTab} setActiveTab={setActiveTab}>Dashboard</TabButton>
+                                    <TabButton tabId="generator" activeTab={activeTab} setActiveTab={setActiveTab}>Generate</TabButton>
+                                    <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage</TabButton>
+                                    <TabButton tabId="history" activeTab={activeTab} setActiveTab={setActiveTab}>History</TabButton>
+                                </>
+                            ) : (
+                                <>
+                                    <TabButton tabId="generator" activeTab={activeTab} setActiveTab={setActiveTab}>Generate Coupon</TabButton>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
 
-            <div className="flex items-center space-x-4 order-3 sm:order-none">
-                <div className="flex items-center space-x-2">
-                    <label htmlFor="role-select" className="text-sm font-medium text-gray-700">Role:</label>
-                    <select 
-                        id="role-select" 
-                        value={role} 
-                        onChange={(e) => setRole(e.target.value as Role)}
-                        className="block w-full pl-3 pr-10 py-1.5 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                    >
-                        <option value="agent">L1/L2 Agent</option>
-                        <option value="admin">Admin</option>
-                    </select>
+                <div className="flex items-center space-x-6">
+                    <div className="hidden lg:flex items-center space-x-6 text-sm">
+                        <div className="flex items-center space-x-2">
+                            <span className="block w-2 h-2 rounded-full bg-green-500"></span>
+                            <span className="text-slate-500">Available:</span>
+                            <span className="font-semibold text-slate-700">{stats.available}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <span className="block w-2 h-2 rounded-full bg-red-500"></span>
+                            <span className="text-slate-500">Used:</span>
+                            <span className="font-semibold text-slate-700">{stats.used}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <span className="block w-2 h-2 rounded-full bg-slate-400"></span>
+                            <span className="text-slate-500">Total:</span>
+                            <span className="font-semibold text-slate-700">{stats.total}</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <label htmlFor="role-select" className="text-sm font-medium text-slate-600 sr-only">Role:</label>
+                        <select 
+                            id="role-select" 
+                            value={role} 
+                            onChange={(e) => setRole(e.target.value as Role)}
+                            className="form-select !py-1.5"
+                        >
+                            <option value="agent">Agent</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
                 </div>
             </div>
-
-            <div className="flex items-center space-x-4 order-2 sm:order-last">
-                <div className="text-sm">
-                    <span className="font-semibold text-green-600">{stats.available}</span> Available
-                </div>
-                 <div className="text-sm">
-                    <span className="font-semibold text-red-600">{stats.used}</span> Used
-                </div>
-                 <div className="text-sm text-gray-500">
-                    <span className="font-semibold text-gray-800">{stats.total}</span> Total
+             <div className="sm:hidden py-2 border-t border-slate-200">
+                <div className="flex items-center justify-center space-x-1">
+                     {role === 'admin' ? (
+                        <>
+                            <TabButton tabId="dashboard" activeTab={activeTab} setActiveTab={setActiveTab}>Dashboard</TabButton>
+                            <TabButton tabId="generator" activeTab={activeTab} setActiveTab={setActiveTab}>Generate</TabButton>
+                            <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage</TabButton>
+                            <TabButton tabId="history" activeTab={activeTab} setActiveTab={setActiveTab}>History</TabButton>
+                        </>
+                    ) : (
+                        <>
+                            <TabButton tabId="generator" activeTab={activeTab} setActiveTab={setActiveTab}>Generate Coupon</TabButton>
+                        </>
+                    )}
                 </div>
             </div>
         </div>
       </header>
       
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="flex justify-center mb-6">
-            <div className="bg-white p-1 rounded-lg shadow-sm flex space-x-1">
-                {role === 'admin' ? (
-                    <>
-                        <TabButton tabId="dashboard" activeTab={activeTab} setActiveTab={setActiveTab}>Dashboard</TabButton>
-                        <TabButton tabId="generator" activeTab={activeTab} setActiveTab={setActiveTab}>Generate Coupon</TabButton>
-                        <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage Coupons</TabButton>
-                        <TabButton tabId="history" activeTab={activeTab} setActiveTab={setActiveTab}>Usage History</TabButton>
-                    </>
-                ) : (
-                    <>
-                        <TabButton tabId="generator" activeTab={activeTab} setActiveTab={setActiveTab}>Generate Coupon</TabButton>
-                    </>
-                )}
-            </div>
-        </div>
-        
+      <main className="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8">
         <div className="px-4 sm:px-0">
           {uploadReport && (
-            <div className="max-w-2xl mx-auto mb-6 p-4 bg-blue-100 border border-blue-200 text-blue-800 rounded-lg shadow">
+            <div className="max-w-3xl mx-auto mb-6 p-4 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg shadow-sm">
               <div className="flex justify-between items-start">
-                  <p>
-                      <strong>Upload Complete:</strong> {uploadReport.newCount} new coupon(s) added. {uploadReport.skipped.length > 0 ? `${uploadReport.skipped.length} duplicate(s) were ignored.` : ''}
-                  </p>
-                  <button onClick={() => setUploadReport(null)} className="font-bold text-xl leading-none">&times;</button>
+                  <div>
+                    <p className="font-semibold">Upload Complete</p>
+                    <p className="text-sm">
+                        {uploadReport.newCount} new coupon(s) added. {uploadReport.skipped.length > 0 ? `${uploadReport.skipped.length} duplicate(s) were ignored.` : ''}
+                    </p>
+                  </div>
+                  <button onClick={() => setUploadReport(null)} className="font-bold text-xl leading-none text-indigo-500 hover:text-indigo-700">&times;</button>
               </div>
               {uploadReport.skipped.length > 0 && (
                   <details className="mt-2 text-sm">
                       <summary className="cursor-pointer font-medium hover:underline">
                           View skipped duplicates
                       </summary>
-                      <div className="mt-2 p-2 bg-white rounded border border-blue-200 max-h-40 overflow-y-auto">
-                          <table className="min-w-full divide-y divide-gray-200">
-                              <thead className="bg-gray-50">
+                      <div className="mt-2 p-2 bg-white rounded border border-indigo-200 max-h-40 overflow-y-auto">
+                          <table className="min-w-full divide-y divide-slate-200">
+                              <thead className="bg-slate-50">
                                   <tr>
-                                      <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Row</th>
-                                      <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                                      <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
+                                      <th className="px-2 py-1 text-left text-xs font-medium text-slate-500">Row</th>
+                                      <th className="px-2 py-1 text-left text-xs font-medium text-slate-500">Code</th>
+                                      <th className="px-2 py-1 text-left text-xs font-medium text-slate-500">Reason</th>
                                   </tr>
                               </thead>
-                              <tbody className="bg-white divide-y divide-gray-200">
+                              <tbody className="bg-white divide-y divide-slate-200">
                                   {uploadReport.skipped.map(item => (
                                       <tr key={item.rowNumber}>
-                                          <td className="px-2 py-1 whitespace-nowrap">{item.rowNumber}</td>
-                                          <td className="px-2 py-1 whitespace-nowrap font-mono">{item.rowData['Coupon code']}</td>
-                                          <td className="px-2 py-1 whitespace-nowrap">{item.reason}</td>
+                                          <td className="px-2 py-1 whitespace-nowrap text-slate-600">{item.rowNumber}</td>
+                                          <td className="px-2 py-1 whitespace-nowrap font-mono text-slate-600">{item.rowData['Coupon code']}</td>
+                                          <td className="px-2 py-1 whitespace-nowrap text-slate-600">{item.reason}</td>
                                       </tr>
                                   ))}
                               </tbody>
@@ -349,23 +379,23 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'manage' && role === 'admin' && (
-            <>
-              <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-2xl mx-auto mb-6">
+            <div className="space-y-8">
+              <div className="bg-white border border-slate-200 p-6 rounded-lg shadow-sm w-full max-w-3xl mx-auto">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                       <div>
-                          <h3 className="text-xl font-semibold text-gray-800">Data Management</h3>
-                          <p className="text-sm text-gray-500 mt-1">Save your current coupon data to a file or load it from a backup.</p>
+                          <h3 className="text-lg font-semibold text-slate-800">Data Management</h3>
+                          <p className="text-sm text-slate-500 mt-1">Save the entire coupon dataset to a JSON file or load from a backup.</p>
                       </div>
                       <div className="flex items-center space-x-2 flex-shrink-0">
-                          <button onClick={handleSaveData} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-blue-600 text-white hover:bg-blue-700">Save</button>
-                          <button onClick={handleLoadDataClick} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-gray-600 text-white hover:bg-gray-700">Load</button>
+                          <button onClick={handleSaveData} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 shadow-sm">Save Data</button>
+                          <button onClick={handleLoadDataClick} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-slate-700 text-white hover:bg-slate-800 shadow-sm">Load Data</button>
                           <input type="file" accept=".json" ref={fileInputRef} onChange={handleLoadDataChange} className="hidden" />
                       </div>
                   </div>
               </div>
               <Uploader onUpload={handleUpload} isLoading={false} existingCoupons={coupons} />
               <CouponTable coupons={coupons} showFilters={true} title="Coupon Inventory" />
-            </>
+            </div>
           )}
 
           {activeTab === 'history' && role === 'admin' && (
