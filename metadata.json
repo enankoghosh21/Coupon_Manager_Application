@@ -1,0 +1,5 @@
+{
+  "name": "Coupon Manager",
+  "description": "An application for L1/L2 agents to generate single-use coupon codes for customers. Admins can upload coupon codes via a CSV file.",
+  "requestFramePermissions": []
+}
