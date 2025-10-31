@@ -5,6 +5,7 @@ import { CouponTable } from './components/CouponTable';
 import { Dashboard } from './components/Dashboard';
 import { Coupon, CouponStatus, GenerationRecord, SkippedCoupon } from './types';
 import { LogoIcon } from './components/icons/LogoIcon';
+import { generateMockCoupons } from './utils/mockData';
 
 type Tab = 'dashboard' | 'generator' | 'manage' | 'history';
 type Role = 'agent' | 'admin';
@@ -56,9 +57,9 @@ const App: React.FC = () => {
             return rehydrateCoupons(JSON.parse(storedData));
         }
     } catch (error) {
-        console.error("Failed to parse coupons from localStorage", error);
+        console.error("Failed to initialize coupons from localStorage", error);
     }
-    return [];
+    return []; // Start with an empty array if no data is in storage
   });
 
   const [activeTab, setActiveTab] = useState<Tab>('generator');
@@ -68,7 +69,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
+      if (coupons.length > 0) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
+      } else {
+        localStorage.removeItem(STORAGE_KEY); // Clean up storage if all coupons are cleared
+      }
     } catch (error) {
       console.error("Failed to save coupons to localStorage", error);
     }
@@ -247,6 +252,20 @@ const App: React.FC = () => {
     reader.readAsText(file);
   };
 
+  const handleClearData = () => {
+    if (window.confirm("Are you sure? This will permanently delete all coupon data from the application.")) {
+        setCoupons([]);
+    }
+  };
+
+  const handleLoadMockData = () => {
+    if (window.confirm("Are you sure? This will replace any current data with the sample dataset for testing.")) {
+        const mockData = generateMockCoupons(500);
+        setCoupons(mockData);
+        alert("Sample data loaded successfully.");
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
@@ -384,11 +403,13 @@ const App: React.FC = () => {
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                       <div>
                           <h3 className="text-lg font-semibold text-slate-800">Data Management</h3>
-                          <p className="text-sm text-slate-500 mt-1">Save the entire coupon dataset to a JSON file or load from a backup.</p>
+                          <p className="text-sm text-slate-500 mt-1">Manage the application's coupon dataset.</p>
                       </div>
-                      <div className="flex items-center space-x-2 flex-shrink-0">
-                          <button onClick={handleSaveData} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 shadow-sm">Save Data</button>
-                          <button onClick={handleLoadDataClick} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-slate-700 text-white hover:bg-slate-800 shadow-sm">Load Data</button>
+                      <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                          <button onClick={handleSaveData} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 shadow-sm">Save Backup</button>
+                          <button onClick={handleLoadDataClick} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-slate-700 text-white hover:bg-slate-800 shadow-sm">Load Backup</button>
+                          <button onClick={handleLoadMockData} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">Load Sample Data</button>
+                          <button onClick={handleClearData} className="px-4 py-2 text-sm font-medium rounded-md transition-colors bg-red-600 text-white hover:bg-red-700 shadow-sm">Clear All Data</button>
                           <input type="file" accept=".json" ref={fileInputRef} onChange={handleLoadDataChange} className="hidden" />
                       </div>
                   </div>
