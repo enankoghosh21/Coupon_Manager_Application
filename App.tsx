@@ -171,7 +171,6 @@ const App: React.FC = () => {
             "Agent Name": coupon.generationRecord!.agentName,
             "Case ID": coupon.generationRecord!.caseId,
             "User ID": coupon.generationRecord!.userId,
-            "Customer Email": coupon.generationRecord!.customerEmail,
             "Order Number": coupon.generationRecord!.orderNumber || 'N/A',
             "Reason": coupon.generationRecord!.reason,
             "Promo Id": coupon.promoId,

@@ -7,7 +7,6 @@ export enum CouponStatus {
 export interface GenerationRecord {
   caseId: string;
   userId: string;
-  customerEmail: string;
   agentName: string;
   orderNumber?: string;
   reason: string;
