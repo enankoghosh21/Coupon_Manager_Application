@@ -20,7 +20,7 @@ declare global {
     }
 }
 
-const STORAGE_KEY = 'couponManagerData_v5';
+const STORAGE_KEY = 'couponManagerData_v4';
 
 // Helper function to rehydrate date objects after parsing from JSON
 const rehydrateCoupons = (coupons: any[]): Coupon[] => {
@@ -60,21 +60,19 @@ const TabButton: React.FC<{tabId: Tab, activeTab: Tab, setActiveTab: (tab: Tab) 
     )
 }
 
-const NewDataModal: React.FC<{
-    title: string;
-    description: string;
-    newItems: string[];
-    onConfirm: () => void;
-    onCancel: () => void;
-}> = ({ title, description, newItems, onConfirm, onCancel }) => {
+const NewTypesModal: React.FC<{
+    newTypes: string[], 
+    onConfirm: () => void, 
+    onCancel: () => void 
+}> = ({ newTypes, onConfirm, onCancel }) => {
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md m-4">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">{title}</h3>
-                <p className="text-sm text-slate-600 mb-4">{description}</p>
+                <h3 className="text-lg font-semibold text-slate-800 mb-4">New Coupon Types Detected</h3>
+                <p className="text-sm text-slate-600 mb-4">The uploaded file contains coupon types that are not in the master list. Do you want to add them and proceed with the upload?</p>
                 <div className="space-y-2 mb-6 p-3 bg-slate-50 border border-slate-200 rounded-md max-h-40 overflow-y-auto">
-                    {newItems.map(item => (
-                        <p key={item} className="font-mono text-sm text-slate-700">{item}</p>
+                    {newTypes.map(type => (
+                        <p key={type} className="font-mono text-sm text-slate-700">{type}</p>
                     ))}
                 </div>
                 <div className="flex justify-end space-x-2">
@@ -82,7 +80,7 @@ const NewDataModal: React.FC<{
                         Cancel Upload
                     </button>
                     <button onClick={onConfirm} className="px-4 py-2 text-sm font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700">
-                        Add & Continue
+                        Add Types & Continue
                     </button>
                 </div>
             </div>
@@ -90,18 +88,15 @@ const NewDataModal: React.FC<{
     );
 };
 
-
 const App: React.FC = () => {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [couponTypes, setCouponTypes] = useState<string[]>([]);
-  const [departments, setDepartments] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('generator');
   const [uploadReport, setUploadReport] = useState<{ newCount: number; skipped: SkippedCoupon[] } | null>(null);
   const [newTypesConfirmation, setNewTypesConfirmation] = useState<{ newTypes: string[], uploadData: { newCoupons: Coupon[], skippedCoupons: SkippedCoupon[] } } | null>(null);
-  const [newDepartmentsConfirmation, setNewDepartmentsConfirmation] = useState<{ newDepartments: string[], uploadData: { newCoupons: Coupon[], skippedCoupons: SkippedCoupon[] } } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Load data from localStorage on initial render
@@ -113,12 +108,34 @@ const App: React.FC = () => {
             const rehydrated = rehydrateCoupons(data.coupons || []);
             setCoupons(rehydrated);
             setApprovalRequests(rehydrateApprovalRequests(data.approvalRequests || []));
-            const loadedUsers = data.users || [];
+            
+            let loadedUsers = data.users || [];
+            // One-time migration from managerId to managerIds
+            const needsMigration = loadedUsers.some((u: any) => u.managerId);
+            if (needsMigration) {
+                console.log("Migrating user data to support multiple managers...");
+                loadedUsers = loadedUsers.map((u: any) => {
+                    if (u.managerId && !u.managerIds) {
+                        const { managerId, ...rest } = u;
+                        return { ...rest, managerIds: [managerId] };
+                    }
+                    return u;
+                });
+            }
             setUsers(loadedUsers);
-            setCouponTypes(data.couponTypes || []);
-            setDepartments(data.departments || []);
+
+            const loadedTypes = data.couponTypes || [];
+            // If historical types exist, use them. Otherwise, derive from loaded coupons.
+            if (loadedTypes.length > 0) {
+                 setCouponTypes(loadedTypes);
+            } else {
+                 const derivedTypes = [...new Set(rehydrated.map(c => c.type))].sort();
+                 setCouponTypes(derivedTypes);
+            }
+
             setCurrentUser(loadedUsers.length > 0 ? loadedUsers[0] : null);
         } else {
+            // First time setup: create a default super admin
             const superAdmin: User = { id: '1', firstName: 'Super', lastName: 'Admin', workId: 'SA001', email: 'superadmin@example.com', role: UserRole.SUPER_ADMIN, isActive: true };
             setUsers([superAdmin]);
             setCurrentUser(superAdmin);
@@ -131,141 +148,96 @@ const App: React.FC = () => {
   // Save data to localStorage whenever it changes
   useEffect(() => {
     try {
-        if (users.length > 0) {
-            const dataToStore = { coupons, approvalRequests, users, couponTypes, departments };
+        if (users.length > 0) { // Only save if there's data to prevent overwriting on error
+            const dataToStore = { coupons, approvalRequests, users, couponTypes };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToStore));
         }
     } catch (error) {
       console.error("Failed to save data to localStorage", error);
     }
-  }, [coupons, approvalRequests, users, couponTypes, departments]);
+  }, [coupons, approvalRequests, users, couponTypes]);
 
 
   useEffect(() => {
+      // Set default tab when user changes
       if (currentUser) {
-          switch(currentUser.role) {
-            case UserRole.SUPER_ADMIN:
-            case UserRole.MANAGER:
-                setActiveTab('dashboard');
-                break;
-            case UserRole.L1_AGENT:
-            case UserRole.L2_AGENT:
-                setActiveTab('generator');
-                break;
-            default:
-                setActiveTab('generator');
+          if (currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.MANAGER) {
+            setActiveTab('dashboard');
+          } else {
+            setActiveTab('generator');
           }
       }
   }, [currentUser]);
+
+  useEffect(() => {
+    // Redirect managers away from the manage tab if they land on it.
+    if (currentUser?.role === UserRole.MANAGER && activeTab === 'manage') {
+        setActiveTab('dashboard');
+    }
+  }, [currentUser, activeTab]);
 
   const isPrivilegedUser = currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.MANAGER;
 
   const completeUpload = (uploadResult: { newCoupons: Coupon[]; skippedCoupons: SkippedCoupon[] }) => {
     const { newCoupons, skippedCoupons } = uploadResult;
     setCoupons(prevCoupons => [...prevCoupons, ...newCoupons].sort((a,b) => a.code.localeCompare(b.code)));
+    
+    // Update the master list of coupon types
+    const typesFromUpload = new Set(newCoupons.map(c => c.type));
+    setCouponTypes(prevTypes => {
+        const combined = new Set([...prevTypes, ...typesFromUpload]);
+        return Array.from(combined).sort();
+    });
+
     setUploadReport({ newCount: newCoupons.length, skipped: skippedCoupons });
   };
 
   const handleUpload = (uploadResult: { newCoupons: Coupon[]; skippedCoupons: SkippedCoupon[] }) => {
     const { newCoupons } = uploadResult;
-
-    // Check for new departments first
-    const departmentsFromUpload = new Set(newCoupons.map(c => c.department).filter(Boolean) as string[]);
-    const existingDepartmentsSet = new Set(departments);
-    const newDepartmentsFound = [...departmentsFromUpload].filter(d => !existingDepartmentsSet.has(d));
-    
-    if (newDepartmentsFound.length > 0 && currentUser?.role === UserRole.SUPER_ADMIN) {
-        setNewDepartmentsConfirmation({ newDepartments: newDepartmentsFound, uploadData: uploadResult });
-        return;
-    }
-
-    // Then check for new coupon types
     const typesFromUpload = new Set(newCoupons.map(c => c.type));
     const existingTypesSet = new Set(couponTypes);
     const newTypesFound = [...typesFromUpload].filter(t => !existingTypesSet.has(t));
 
     if (newTypesFound.length > 0 && isPrivilegedUser) {
         setNewTypesConfirmation({ newTypes: newTypesFound, uploadData: uploadResult });
-        return;
-    }
-
-    completeUpload(uploadResult);
-  };
-
-  const handleConfirmNewDepartments = () => {
-    if (!newDepartmentsConfirmation) return;
-    const { newDepartments, uploadData } = newDepartmentsConfirmation;
-
-    // Add new departments to master list
-    setDepartments(prev => Array.from(new Set([...prev, ...newDepartments])).sort());
-    
-    // Now check for new types in the same upload data
-    const typesFromUpload = new Set(uploadData.newCoupons.map(c => c.type));
-    const existingTypesSet = new Set(couponTypes);
-    const newTypesFound = [...typesFromUpload].filter(t => !existingTypesSet.has(t));
-    
-    setNewDepartmentsConfirmation(null); // Clear department confirmation
-
-    if (newTypesFound.length > 0 && isPrivilegedUser) {
-        setNewTypesConfirmation({ newTypes: newTypesFound, uploadData });
     } else {
-        completeUpload(uploadData);
+        completeUpload(uploadResult);
     }
   };
-
 
   const handleConfirmNewTypes = () => {
     if (!newTypesConfirmation) return;
-    const { newTypes, uploadData } = newTypesConfirmation;
-    setCouponTypes(prev => Array.from(new Set([...prev, ...newTypes])).sort());
+    const { uploadData } = newTypesConfirmation;
     completeUpload(uploadData);
     setNewTypesConfirmation(null);
   };
 
   const handleGenerate = (details: Omit<GenerationRecord, 'generatedAt'>, type: string, promoName: string): Coupon | 'APPROVAL_REQUESTED' | null => {
-    const { caseId, userId, orderNumber, agentName } = details;
+    const { userId, orderNumber } = details;
 
-    const isCaseIdUsed = coupons.some(c => 
-        c.status === CouponStatus.USED && 
-        c.generationRecord?.caseId.trim().toLowerCase() === caseId.trim().toLowerCase()
-    );
-
-    if (isCaseIdUsed) {
-        throw new Error(`A coupon has already been generated for Case ID "${caseId}". Only one coupon per case is allowed.`);
-    }
-    
-    const isUserOrderPairUsed = coupons.some(c =>
-        c.status === CouponStatus.USED &&
-        c.generationRecord?.userId.trim().toLowerCase() === userId.trim().toLowerCase() &&
-        c.generationRecord?.orderNumber.trim().toLowerCase() === orderNumber.trim().toLowerCase()
-    );
-
-    const now = new Date();
-    const findAvailableCoupon = () => coupons.find(c =>
-        c.status === CouponStatus.AVAILABLE &&
-        c.beginsAt <= now &&
-        (!c.expiresAt || c.expiresAt >= now) &&
-        c.type === type &&
-        c.promoName === promoName
-    );
+    // Only check for duplicates if an order number is provided and not empty
+    const isUserOrderPairUsed = orderNumber && orderNumber.trim() !== ''
+        ? coupons.some(c =>
+            c.status === CouponStatus.USED &&
+            c.generationRecord?.userId.trim().toLowerCase() === userId.trim().toLowerCase() &&
+            c.generationRecord?.orderNumber?.trim().toLowerCase() === orderNumber.trim().toLowerCase()
+        )
+        : false;
 
     if (isUserOrderPairUsed) {
-        const potentialCoupon = findAvailableCoupon();
-        if (!potentialCoupon) return null; // Can't request if none exist
-
         const newRequest: ApprovalRequest = {
             id: `${Date.now()}-${userId}`,
             status: ApprovalStatus.PENDING,
             requestedAt: new Date(),
-            caseId, userId, orderNumber, reason: details.reason, agentName,
+            ...details,
             couponType: type,
             promoName: promoName,
-            department: potentialCoupon.department || 'Unassigned'
         };
         setApprovalRequests(prev => [newRequest, ...prev]);
         return 'APPROVAL_REQUESTED';
     }
       
+    const now = new Date();
     const availableCouponIndex = coupons.findIndex(
       (c) => c.status === CouponStatus.AVAILABLE && 
              c.beginsAt <= now &&
@@ -313,8 +285,7 @@ const App: React.FC = () => {
             c.beginsAt <= now &&
             (!c.expiresAt || c.expiresAt >= now) &&
             c.type === request.couponType &&
-            c.promoName === request.promoName &&
-            (c.department || 'Unassigned') === request.department
+            c.promoName === request.promoName
         );
 
         if (availableCouponIndex !== -1) {
@@ -378,8 +349,7 @@ const App: React.FC = () => {
                 c.beginsAt <= now &&
                 (!c.expiresAt || c.expiresAt >= now) &&
                 c.type === request.couponType &&
-                c.promoName === request.promoName &&
-                (c.department || 'Unassigned') === request.department
+                c.promoName === request.promoName
             );
 
             if (availableCouponIndex !== -1) {
@@ -431,61 +401,54 @@ const App: React.FC = () => {
     setUsers(prevUsers => prevUsers.filter(u => u.id !== userId));
   }
 
+  const handleTeamAssignment = (agentId: string, managerId: string, action: 'assign' | 'unassign') => {
+    setUsers(prevUsers => prevUsers.map(user => {
+        if (user.id === agentId) {
+            const currentManagerIds = new Set(user.managerIds || []);
+            if (action === 'assign') {
+                currentManagerIds.add(managerId);
+            } else {
+                currentManagerIds.delete(managerId);
+            }
+            return { ...user, managerIds: Array.from(currentManagerIds) };
+        }
+        return user;
+    }));
+  };
+
   const handleCreateCouponType = (newType: string) => {
-    setCouponTypes(prev => Array.from(new Set([...prev, newType.trim()])).sort());
+    setCouponTypes(prev => {
+        const newTypes = new Set([...prev, newType.trim()]);
+        return Array.from(newTypes).sort();
+    });
   };
 
   const handleDeleteCouponType = (typeToDelete: string) => {
     if (window.confirm(`Are you sure you want to delete the type "${typeToDelete}"? This will also remove access for any agents assigned to it.`)) {
         setCouponTypes(prev => prev.filter(t => t !== typeToDelete));
-        setUsers(prevUsers => prevUsers.map(u => ({ ...u, accessibleCouponTypes: u.accessibleCouponTypes?.filter(t => t !== typeToDelete) })));
+        // Also remove access from all users
+        setUsers(prevUsers => prevUsers.map(u => ({
+            ...u,
+            accessibleCouponTypes: u.accessibleCouponTypes?.filter(t => t !== typeToDelete)
+        })));
     }
   };
   
-  const handleCreateDepartment = (newDept: string) => {
-    setDepartments(prev => Array.from(new Set([...prev, newDept.trim()])).sort());
-  };
-
-  const handleDeleteDepartment = (deptToDelete: string) => {
-    if (window.confirm(`Are you sure you want to delete the department "${deptToDelete}"? This will remove it from all users and may affect their access.`)) {
-        setDepartments(prev => prev.filter(d => d !== deptToDelete));
-        setUsers(prevUsers => prevUsers.map(u => ({ ...u, accessibleDepartments: u.accessibleDepartments?.filter(d => d !== deptToDelete) })));
-    }
-  };
-  
-  const visibleCoupons = useMemo(() => {
-      if (!currentUser || currentUser.role === UserRole.SUPER_ADMIN) {
-          return coupons;
-      }
-      const accessibleDepts = new Set(currentUser.accessibleDepartments || []);
-      if (accessibleDepts.size === 0) return []; // If no departments assigned, see nothing
-      return coupons.filter(c => c.department && accessibleDepts.has(c.department));
-  }, [coupons, currentUser]);
-
-  const visibleApprovalRequests = useMemo(() => {
-    if (!currentUser || currentUser.role === UserRole.SUPER_ADMIN) {
-        return approvalRequests;
-    }
-    const accessibleDepts = new Set(currentUser.accessibleDepartments || []);
-    if (accessibleDepts.size === 0) return [];
-    return approvalRequests.filter(r => accessibleDepts.has(r.department));
-  }, [approvalRequests, currentUser]);
-
   const { stats, availableCoupons, usedCoupons, pendingApprovalsCount } = useMemo(() => {
       const now = new Date();
-      const used = visibleCoupons.filter(c => c.status === CouponStatus.USED)
+      const used = coupons.filter(c => c.status === CouponStatus.USED)
           .sort((a,b) => b.generationRecord!.generatedAt.getTime() - a.generationRecord!.generatedAt.getTime());
 
-      const available = visibleCoupons.filter(c => 
+      const available = coupons.filter(c => 
           c.status === CouponStatus.AVAILABLE &&
           c.beginsAt <= now &&
           (!c.expiresAt || c.expiresAt >= now)
       );
       
       const usedCount = used.length;
-      const totalCount = visibleCoupons.length;
+      const totalCount = coupons.length;
       const availableCount = available.length;
-      const pendingCount = visibleApprovalRequests.filter(r => r.status === ApprovalStatus.PENDING).length;
+      const pendingCount = approvalRequests.filter(r => r.status === ApprovalStatus.PENDING).length;
 
       return {
         stats: { available: availableCount, used: usedCount, total: totalCount },
@@ -493,7 +456,7 @@ const App: React.FC = () => {
         usedCoupons: used,
         pendingApprovalsCount: pendingCount
       };
-  }, [visibleCoupons, visibleApprovalRequests]);
+  }, [coupons, approvalRequests]);
   
   const handleExportUsageHistory = () => {
     try {
@@ -501,7 +464,6 @@ const App: React.FC = () => {
             "Coupon Code": coupon.code,
             "Promo Name": coupon.promoName,
             "Coupon Type": coupon.type,
-            "Department": coupon.department || 'N/A',
             "Generated At": coupon.generationRecord!.generatedAt.toLocaleString(),
             "Agent Name": coupon.generationRecord!.agentName,
             "Case ID": coupon.generationRecord!.caseId,
@@ -524,7 +486,7 @@ const App: React.FC = () => {
 
   const handleSaveData = () => {
     try {
-        const dataToSave = { coupons, approvalRequests, users, couponTypes, departments };
+        const dataToSave = { coupons, approvalRequests, users, couponTypes };
         const dataStr = JSON.stringify(dataToSave, null, 2);
         const blob = new Blob([dataStr], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -549,7 +511,7 @@ const App: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!window.confirm("Are you sure you want to load this data? This will overwrite all current data.")) {
+    if (!window.confirm("Are you sure you want to load this data? This will overwrite all current coupons, requests, and user accounts.")) {
         if (fileInputRef.current) fileInputRef.current.value = "";
         return;
     }
@@ -566,8 +528,7 @@ const App: React.FC = () => {
             setCoupons(rehydratedCouponsList);
             setApprovalRequests(rehydratedRequestsList);
             setUsers(loadedUsers);
-            setCouponTypes(data.couponTypes || []);
-            setDepartments(data.departments || []);
+            setCouponTypes(data.couponTypes || [...new Set(rehydratedCouponsList.map(c => c.type))].sort());
 
             if (loadedUsers.length > 0) {
               setCurrentUser(loadedUsers[0]);
@@ -590,11 +551,11 @@ const App: React.FC = () => {
   };
 
   const handleClearData = () => {
-    if (window.confirm("Are you sure? This will permanently delete all application data, including users, types, and departments.")) {
+    if (window.confirm("Are you sure? This will permanently delete all application data, including users and coupon types.")) {
         setCoupons([]);
         setApprovalRequests([]);
         setCouponTypes([]);
-        setDepartments([]);
+        // Keep the superadmin user
         const superAdmin: User = { id: '1', firstName: 'Super', lastName: 'Admin', workId: 'SA001', email: 'superadmin@example.com', role: UserRole.SUPER_ADMIN, isActive: true };
         setUsers([superAdmin]);
         setCurrentUser(superAdmin);
@@ -608,9 +569,7 @@ const App: React.FC = () => {
         setCoupons(mockData);
         setApprovalRequests([]);
         const derivedTypes = [...new Set(mockData.map(c => c.type))].sort();
-        const derivedDepts = [...new Set(mockData.map(c => c.department).filter(Boolean) as string[])].sort();
         setCouponTypes(derivedTypes);
-        setDepartments(derivedDepts);
         alert("Sample data loaded successfully.");
     }
   };
@@ -651,7 +610,9 @@ const App: React.FC = () => {
                                     <UserIcon className="w-4 h-4 mr-2" />
                                     Accounts
                                  </TabButton>
-                                <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage</TabButton>
+                                {currentUser.role === UserRole.SUPER_ADMIN && (
+                                    <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage</TabButton>
+                                )}
                                 <TabButton tabId="history" activeTab={activeTab} setActiveTab={setActiveTab}>History</TabButton>
                             </div>
                         </div>
@@ -702,7 +663,9 @@ const App: React.FC = () => {
                           {pendingApprovalsCount > 0 && <span className="ml-1.5 inline-block w-2 h-2 bg-red-500 rounded-full"></span>}
                         </TabButton>
                         <TabButton tabId="accounts" activeTab={activeTab} setActiveTab={setActiveTab}>Accounts</TabButton>
-                        <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage</TabButton>
+                        {currentUser.role === UserRole.SUPER_ADMIN && (
+                            <TabButton tabId="manage" activeTab={activeTab} setActiveTab={setActiveTab}>Manage</TabButton>
+                        )}
                         <TabButton tabId="history" activeTab={activeTab} setActiveTab={setActiveTab}>History</TabButton>
                     </div>
                 </div>
@@ -753,24 +716,13 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {newDepartmentsConfirmation && (
-              <NewDataModal
-                  title="New Departments Detected"
-                  description="The uploaded file contains departments that are not in the master list. Do you want to add them and continue?"
-                  newItems={newDepartmentsConfirmation.newDepartments}
-                  onConfirm={handleConfirmNewDepartments}
-                  onCancel={() => setNewDepartmentsConfirmation(null)}
-              />
-          )}
           {newTypesConfirmation && (
-              <NewDataModal
-                  title="New Coupon Types Detected"
-                  description="The uploaded file contains coupon types that are not in the master list. Do you want to add them and continue?"
-                  newItems={newTypesConfirmation.newTypes}
-                  onConfirm={handleConfirmNewTypes}
-                  onCancel={() => setNewTypesConfirmation(null)}
-              />
-          )}
+                <NewTypesModal 
+                    newTypes={newTypesConfirmation.newTypes}
+                    onConfirm={handleConfirmNewTypes}
+                    onCancel={() => setNewTypesConfirmation(null)}
+                />
+            )}
 
           {!currentUser.isActive ? (
                 <div className="text-center py-12">
@@ -779,17 +731,19 @@ const App: React.FC = () => {
                 </div>
             ) : (
                 <>
-                    {(currentUser.role === UserRole.L1_AGENT || currentUser.role === UserRole.L2_AGENT) && (
+                    {/* Simplified View for Agents */}
+                    {!isPrivilegedUser && (
                         <Generator onGenerate={handleGenerate} availableCoupons={availableCoupons} usedCoupons={usedCoupons} currentUser={currentUser} />
                     )}
 
+                    {/* Tabbed View for Admin/Manager */}
                     {isPrivilegedUser && (
                         <>
-                            {activeTab === 'dashboard' && <Dashboard coupons={visibleCoupons} />}
+                            {activeTab === 'dashboard' && <Dashboard coupons={coupons} />}
                             {activeTab === 'generator' && <Generator onGenerate={handleGenerate} availableCoupons={availableCoupons} usedCoupons={usedCoupons} currentUser={currentUser} />}
-                            {activeTab === 'approvals' && <Approvals approvalRequests={visibleApprovalRequests} onAction={handleApprovalAction} onBulkAction={handleBulkAction} />}
-                            {activeTab === 'accounts' && <Accounts users={users} currentUser={currentUser} couponTypes={couponTypes} departments={departments} onSaveUser={handleSaveUser} onDeleteUser={handleDeleteUser} onCreateCouponType={handleCreateCouponType} onDeleteCouponType={handleDeleteCouponType} onCreateDepartment={handleCreateDepartment} onDeleteDepartment={handleDeleteDepartment} />}
-                            {activeTab === 'manage' && (
+                            {activeTab === 'approvals' && <Approvals approvalRequests={approvalRequests} onAction={handleApprovalAction} onBulkAction={handleBulkAction} />}
+                            {activeTab === 'accounts' && <Accounts users={users} currentUser={currentUser} couponTypes={couponTypes} onSaveUser={handleSaveUser} onDeleteUser={handleDeleteUser} onCreateCouponType={handleCreateCouponType} onDeleteCouponType={handleDeleteCouponType} onTeamAssignment={handleTeamAssignment} />}
+                            {activeTab === 'manage' && currentUser.role === UserRole.SUPER_ADMIN && (
                                 <div className="space-y-8">
                                     <div className="bg-white border border-slate-200 p-6 rounded-lg shadow-sm w-full max-w-3xl mx-auto">
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -807,7 +761,7 @@ const App: React.FC = () => {
                                         </div>
                                     </div>
                                     <Uploader onUpload={handleUpload} isLoading={false} existingCoupons={coupons} />
-                                    <CouponTable coupons={visibleCoupons} showFilters={true} title="Coupon Inventory" />
+                                    <CouponTable coupons={coupons} showFilters={true} title="Coupon Inventory" />
                                 </div>
                             )}
                             {activeTab === 'history' && (
