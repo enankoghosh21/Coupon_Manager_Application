@@ -15,6 +15,8 @@ export enum UserRole {
   MANAGER = 'Manager',
   L2_AGENT = 'L2 Agent',
   L1_AGENT = 'L1 Agent',
+  CMT = 'CMT',
+  L4 = 'L4',
 }
 
 export interface User {
@@ -26,14 +28,15 @@ export interface User {
   role: UserRole;
   isActive: boolean;
   accessibleCouponTypes?: string[];
-  accessibleDepartments?: string[];
+  managerIds?: string[];
 }
 
 export interface GenerationRecord {
   caseId: string;
   userId: string;
+  agentId?: string;
   agentName: string;
-  orderNumber: string;
+  orderNumber?: string;
   reason: string;
   generatedAt: Date;
 }
@@ -46,7 +49,6 @@ export interface Coupon {
   status: CouponStatus;
   type: string;
   value: number;
-  department?: string;
   generationRecord?: GenerationRecord;
   beginsAt: Date;
   expiresAt?: Date;
@@ -59,13 +61,13 @@ export interface ApprovalRequest {
   // Details from the generation form
   caseId: string;
   userId: string;
+  agentId: string;
   agentName: string;
-  orderNumber: string;
+  orderNumber?: string;
   reason: string;
   // The coupon type requested
   couponType: string;
   promoName: string;
-  department: string;
   // Details for resolution
   resolvedBy?: string; // Admin name
   resolvedAt?: Date;
@@ -76,4 +78,13 @@ export interface SkippedCoupon {
   rowData: Record<string, string | number>;
   rowNumber: number;
   reason: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: Date;
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  action: string;
 }
