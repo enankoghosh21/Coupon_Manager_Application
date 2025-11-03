@@ -26,6 +26,7 @@ It’s designed for e-commerce businesses, marketing teams, and admin users who 
 | State Management | React Context / Redux Toolkit (if applicable) |
 | API Integration | Axios / Fetch API |
 | Build Tool | Vite / CRA / Webpack (depending on setup) |
+| Backend | Express (TypeScript) + SQLite |
 
 ---
 
@@ -70,6 +71,15 @@ npm run preview
 ```
 
 The app should now be running at [http://localhost:5173](http://localhost:5173) (or your configured port).
+
+To start the backend API in development mode (after installing dependencies inside `server/`):
+
+```bash
+cd server
+npm run dev
+```
+
+The REST API will listen on [http://localhost:4000](http://localhost:4000) by default. See [`server/README.md`](server/README.md) for the full endpoint catalog and environment variables.
 
 ---
 
